@@ -60,8 +60,8 @@ class Client:
     def set_username(self, device=None):
         self.username = self.sp.current_user()['display_name']
 
-    @utils.validate
-    def search(self, query: str, qtype: str = 'track', limit=10, device=None):
+    @utils.ensure_auth
+    def search(self, query: str, qtype: str = 'track', limit=10):
         """
         Searches based of query term.
         - query: query term

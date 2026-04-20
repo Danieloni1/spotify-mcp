@@ -76,6 +76,7 @@ def parse_playlist(playlist_item: dict, username, detailed=False) -> Optional[di
         'name': playlist_item['name'],
         'id': playlist_item['id'],
         'owner': playlist_item['owner']['display_name'],
+        'owner_id': playlist_item['owner'].get('id'),
         'user_is_owner': playlist_item['owner']['display_name'] == username,
         'total_tracks': playlist_item['tracks']['total'],
     }
@@ -211,6 +212,20 @@ def build_search_query(base_query: str,
 
     query_parts = [base_query] + filters
     return quote(" ".join(query_parts))
+
+
+def ensure_auth(func: Callable[..., T]) -> Callable[..., T]:
+    """Decorator that refreshes the Spotify auth token when expired.
+    Does not assign a device — use for read-only methods like search, history, top items.
+    """
+
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        if not self.auth_ok():
+            self.auth_refresh()
+        return func(self, *args, **kwargs)
+
+    return wrapper
 
 
 def validate(func: Callable[..., T]) -> Callable[..., T]:
