@@ -62,6 +62,9 @@ async def handle_list_tools() -> list[types.Tool]:
         Queue.as_tool(),
         GetInfo.as_tool(),
         Playlist.as_tool(),
+        History.as_tool(),
+        TasteProfile.as_tool(),
+        SmartPlay.as_tool(),
     ]
     logger.info(f"Available tools: {[tool.name for tool in tools]}")
     return tools
@@ -297,6 +300,18 @@ async def handle_call_tool(
                             text=f"Unknown playlist action: {action}."
                                  "Supported actions are: get, get_tracks, add_tracks, remove_tracks, change_details, create."
                         )]
+
+            case "History":
+                logger.info(f"History operation with arguments: {arguments}")
+                items = spotify_client.get_recently_played(
+                    limit=int(arguments.get("limit", 20)),
+                    after=arguments.get("after"),
+                    before=arguments.get("before"),
+                )
+                if not items:
+                    return [types.TextContent(type="text", text="No recently played tracks found.")]
+                return [types.TextContent(type="text", text=json.dumps(items, indent=2))]
+
             case _:
                 error_msg = f"Unknown tool: {name}"
                 logger.error(error_msg)

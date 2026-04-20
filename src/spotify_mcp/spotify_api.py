@@ -362,6 +362,23 @@ class Client:
     def previous_track(self):
         self.sp.previous_track()
 
+    @utils.ensure_auth
+    def get_recently_played(self, limit: int = 20, after: Optional[int] = None,
+                            before: Optional[int] = None) -> List[Dict]:
+        """Return the user's recently played tracks.
+        - limit: 1..50 (Spotify hard cap).
+        - after: unix-ms cursor, return items played after this timestamp.
+        - before: unix-ms cursor, return items played before this timestamp.
+        - after and before are mutually exclusive per Spotify API.
+        """
+        if after is not None and before is not None:
+            raise ValueError("Pass either `after` or `before`, not both.")
+        limit = max(1, min(limit, 50))
+        resp = self.sp.current_user_recently_played(limit=limit, after=after, before=before)
+        if not resp or not resp.get('items'):
+            return []
+        return [utils.parse_recently_played_item(i) for i in resp['items']]
+
     def seek_to_position(self, position_ms):
         self.sp.seek_track(position_ms=position_ms)
 

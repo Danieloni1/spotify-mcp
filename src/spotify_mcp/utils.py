@@ -145,6 +145,17 @@ def parse_search_results(results: Dict, qtype: str, username: Optional[str] = No
 
     return dict(_results)
 
+def parse_recently_played_item(item: dict) -> dict:
+    """Shape a single item from current_user_recently_played into a compact dict."""
+    context = item.get('context') or {}
+    return {
+        'track': parse_track(item['track']),
+        'played_at': item.get('played_at'),
+        'context_uri': context.get('uri'),
+        'context_type': context.get('type'),
+    }
+
+
 def parse_tracks(items: Dict) -> list:
     """
     Parse a list of track items and return a list of parsed tracks.
