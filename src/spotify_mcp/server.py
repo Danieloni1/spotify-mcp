@@ -334,6 +334,19 @@ async def handle_call_tool(
                     text=f"Unknown TasteProfile action: {action}. Supported: profile, tracks, artists."
                 )]
 
+            case "SmartPlay":
+                logger.info(f"SmartPlay operation with arguments: {arguments}")
+                result = spotify_client.smart_play(
+                    query=arguments.get("query", ""),
+                    prefer=arguments.get("prefer"),
+                    auto_play=bool(arguments.get("auto_play", True)),
+                    limit=int(arguments.get("limit", 10)),
+                )
+                return [types.TextContent(
+                    type="text",
+                    text=json.dumps(result, indent=2, default=str)
+                )]
+
             case _:
                 error_msg = f"Unknown tool: {name}"
                 logger.error(error_msg)

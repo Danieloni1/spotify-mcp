@@ -434,6 +434,121 @@ class Client:
         self._taste_cache[time_range] = profile
         return profile
 
+    @utils.ensure_auth
+    def smart_play(self, query: str, prefer: Optional[str] = None,
+                   auto_play: bool = True, limit: int = 10) -> Dict:
+        """Pick the best Spotify item for a natural-language query and (optionally)
+        start playback. Ranks by name overlap, editorial curation (playlists), and
+        the user's taste profile (top artists). Graceful degrade on taste/device failure.
+        """
+        from . import ranking
+
+        if not query or not query.strip():
+            return {'error': 'query is required'}
+        if prefer is not None and prefer not in ('track', 'album', 'playlist'):
+            return {'error': f"prefer must be 'track', 'album', or 'playlist', got {prefer!r}"}
+        limit = max(1, min(limit, 20))
+
+        # 1. Taste signal (graceful degrade).
+        top_artist_ids: set = set()
+        taste_available = False
+        try:
+            profile = self.get_taste_profile(time_range='medium_term', limit=20)
+            top_artist_ids = set(profile.get('_top_artist_ids') or set())
+            taste_available = True
+        except Exception as e:
+            self.logger.info(f"smart_play: taste unavailable ({e}); ranking without taste signal")
+
+        # 2. Raw search — need artist IDs unavailable on parsed track/album output.
+        if self.username is None:
+            self.set_username()
+        raw = self.sp.search(q=query, limit=limit, type='track,album,playlist')
+        if not raw:
+            return {'error': f"No search results for query {query!r}.", 'taste_available': taste_available}
+
+        # Build (type, id) -> artist_ids lookup from raw response.
+        artist_ids_by_key: Dict[tuple, List[str]] = {}
+        for t in ((raw.get('tracks') or {}).get('items') or []):
+            if t and t.get('id'):
+                artist_ids_by_key[('track', t['id'])] = [
+                    a['id'] for a in (t.get('artists') or []) if a.get('id')
+                ]
+        for a in ((raw.get('albums') or {}).get('items') or []):
+            if a and a.get('id'):
+                artist_ids_by_key[('album', a['id'])] = [
+                    ar['id'] for ar in (a.get('artists') or []) if ar.get('id')
+                ]
+
+        # 3. Parse + flatten candidates, inject _artist_ids in-memory.
+        parsed = utils.parse_search_results(raw, qtype='track,album,playlist', username=self.username)
+        candidates: List[tuple] = []
+        seen: set = set()
+
+        def push(item: Dict, ctype: str):
+            if not item or not item.get('id'):
+                return
+            key = (ctype, item['id'])
+            if key in seen:
+                return
+            ids = artist_ids_by_key.get(key)
+            if ids is not None:
+                item['_artist_ids'] = ids
+            candidates.append((item, ctype))
+            seen.add(key)
+
+        for t in parsed.get('tracks') or []:
+            push(t, 'track')
+        for a in parsed.get('albums') or []:
+            push(a, 'album')
+        for p in parsed.get('playlists') or []:
+            push(p, 'playlist')
+
+        if not candidates:
+            return {
+                'error': f"No candidates found for query {query!r}. Try a more specific query.",
+                'taste_available': taste_available,
+            }
+
+        # 4. Rank.
+        ranked = ranking.rank_candidates(candidates, query, top_artist_ids, prefer)
+        top = ranked[0]
+        uri = f"spotify:{top['type']}:{top['candidate']['id']}"
+
+        # 5. Auto-play (graceful degrade on device / playback failure).
+        auto_played = False
+        auto_play_error: Optional[str] = None
+        if auto_play:
+            try:
+                self.start_playback(spotify_uri=uri)
+                auto_played = True
+            except Exception as e:
+                auto_play_error = str(e)
+                self.logger.info(f"smart_play: auto-play failed: {e}")
+
+        def public(c: Dict) -> Dict:
+            return {k: v for k, v in c.items() if not k.startswith('_')}
+
+        def shape(s: Dict) -> Dict:
+            cand = s['candidate']
+            return {
+                'type': s['type'],
+                'id': cand['id'],
+                'name': cand.get('name'),
+                'uri': f"spotify:{s['type']}:{cand['id']}",
+                'score': round(s['score'], 3),
+                'candidate': public(cand),
+            }
+
+        return {
+            'query': query,
+            'chosen': shape(top),
+            'runners_up': [shape(s) for s in ranked[1:5]],
+            'rationale': ranking.format_rationale(top),
+            'auto_played': auto_played,
+            'auto_play_error': auto_play_error,
+            'taste_available': taste_available,
+        }
+
     def seek_to_position(self, position_ms):
         self.sp.seek_track(position_ms=position_ms)
 
