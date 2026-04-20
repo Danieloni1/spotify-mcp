@@ -145,6 +145,25 @@ def parse_search_results(results: Dict, qtype: str, username: Optional[str] = No
 
     return dict(_results)
 
+def parse_top_artist(artist_item: dict) -> dict:
+    """Shape a top-artist entry: keeps genres and popularity (both present on top-artist responses)."""
+    return {
+        'id': artist_item['id'],
+        'name': artist_item['name'],
+        'genres': artist_item.get('genres', []),
+        'popularity': artist_item.get('popularity'),
+    }
+
+
+def genre_histogram(top_artists_raw: list, limit: int = 20) -> list:
+    """Count genre occurrences across a list of raw top-artist objects. Returns sorted [{name, count}]."""
+    from collections import Counter
+    counter: Counter = Counter()
+    for a in top_artists_raw:
+        counter.update(a.get('genres') or [])
+    return [{'name': g, 'count': c} for g, c in counter.most_common(limit)]
+
+
 def parse_recently_played_item(item: dict) -> dict:
     """Shape a single item from current_user_recently_played into a compact dict."""
     context = item.get('context') or {}

@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from typing import Optional, Dict, List
 
 import spotipy
@@ -18,6 +19,8 @@ REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI")
 # Normalize the redirect URI to meet Spotify's requirements
 if REDIRECT_URI:
     REDIRECT_URI = utils.normalize_redirect_uri(REDIRECT_URI)
+
+TASTE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 days
 
 SCOPES = [
     # spotify connect
@@ -55,6 +58,7 @@ class Client:
             raise
 
         self.username = None
+        self._taste_cache: Dict[str, Dict] = {}  # keyed by time_range
 
     @utils.validate
     def set_username(self, device=None):
@@ -378,6 +382,57 @@ class Client:
         if not resp or not resp.get('items'):
             return []
         return [utils.parse_recently_played_item(i) for i in resp['items']]
+
+    @utils.ensure_auth
+    def get_top_items(self, entity: str, time_range: str = 'medium_term',
+                      limit: int = 20) -> List[Dict]:
+        """Return the user's top tracks or artists for a given time range.
+        - entity: 'tracks' or 'artists'.
+        - time_range: 'short_term' (~4 weeks), 'medium_term' (~6 months), or 'long_term'.
+        """
+        if entity not in ('tracks', 'artists'):
+            raise ValueError(f"entity must be 'tracks' or 'artists', got {entity!r}")
+        if time_range not in ('short_term', 'medium_term', 'long_term'):
+            raise ValueError(f"invalid time_range {time_range!r}")
+        limit = max(1, min(limit, 50))
+        if entity == 'tracks':
+            resp = self.sp.current_user_top_tracks(limit=limit, offset=0, time_range=time_range)
+            return [utils.parse_track(t) for t in (resp.get('items') or [])]
+        resp = self.sp.current_user_top_artists(limit=limit, offset=0, time_range=time_range)
+        return [utils.parse_top_artist(a) for a in (resp.get('items') or [])]
+
+    @utils.ensure_auth
+    def get_taste_profile(self, time_range: str = 'medium_term', limit: int = 20,
+                          refresh: bool = False) -> Dict:
+        """Build (and cache for 30 days) a compact taste profile for the user.
+        Returns {time_range, top_artists, top_tracks, genres, _top_artist_ids, _cached_at}.
+        Underscore-prefixed keys are for internal use (smart_play) and stripped before
+        external JSON responses.
+        """
+        if time_range not in ('short_term', 'medium_term', 'long_term'):
+            raise ValueError(f"invalid time_range {time_range!r}")
+        limit = max(1, min(limit, 50))
+        now = time.time()
+        if not refresh and time_range in self._taste_cache:
+            cached = self._taste_cache[time_range]
+            if now - cached.get('_cached_at', 0) < TASTE_CACHE_TTL_SECONDS:
+                self.logger.info(f"get_taste_profile: cache hit for time_range={time_range}")
+                return cached
+        self.logger.info(f"get_taste_profile: fetching fresh profile for time_range={time_range}")
+        top_artists_raw = (self.sp.current_user_top_artists(
+            limit=limit, time_range=time_range) or {}).get('items') or []
+        top_tracks_raw = (self.sp.current_user_top_tracks(
+            limit=limit, time_range=time_range) or {}).get('items') or []
+        profile: Dict = {
+            'time_range': time_range,
+            'top_artists': [utils.parse_top_artist(a) for a in top_artists_raw],
+            'top_tracks': [utils.parse_track(t) for t in top_tracks_raw],
+            'genres': utils.genre_histogram(top_artists_raw, limit=limit),
+            '_top_artist_ids': {a['id'] for a in top_artists_raw},
+            '_cached_at': now,
+        }
+        self._taste_cache[time_range] = profile
+        return profile
 
     def seek_to_position(self, position_ms):
         self.sp.seek_track(position_ms=position_ms)

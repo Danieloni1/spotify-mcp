@@ -312,6 +312,28 @@ async def handle_call_tool(
                     return [types.TextContent(type="text", text="No recently played tracks found.")]
                 return [types.TextContent(type="text", text=json.dumps(items, indent=2))]
 
+            case "TasteProfile":
+                logger.info(f"TasteProfile operation with arguments: {arguments}")
+                action = arguments.get("action", "profile")
+                time_range = arguments.get("time_range", "medium_term")
+                limit = int(arguments.get("limit", 20))
+                refresh = bool(arguments.get("refresh", False))
+                if action == "profile":
+                    profile = spotify_client.get_taste_profile(
+                        time_range=time_range, limit=limit, refresh=refresh
+                    )
+                    public = {k: v for k, v in profile.items() if not k.startswith("_")}
+                    return [types.TextContent(type="text", text=json.dumps(public, indent=2))]
+                if action in ("tracks", "artists"):
+                    items = spotify_client.get_top_items(
+                        entity=action, time_range=time_range, limit=limit
+                    )
+                    return [types.TextContent(type="text", text=json.dumps(items, indent=2))]
+                return [types.TextContent(
+                    type="text",
+                    text=f"Unknown TasteProfile action: {action}. Supported: profile, tracks, artists."
+                )]
+
             case _:
                 error_msg = f"Unknown tool: {name}"
                 logger.error(error_msg)
