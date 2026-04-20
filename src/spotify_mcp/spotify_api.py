@@ -19,13 +19,19 @@ REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI")
 if REDIRECT_URI:
     REDIRECT_URI = utils.normalize_redirect_uri(REDIRECT_URI)
 
-SCOPES = ["user-read-currently-playing", "user-read-playback-state", "user-read-currently-playing",  # spotify connect
-          "app-remote-control", "streaming",  # playback
-          "playlist-read-private", "playlist-read-collaborative", "playlist-modify-private", "playlist-modify-public",
-          # playlists
-          "user-read-playback-position", "user-top-read", "user-read-recently-played",  # listening history
-          "user-library-modify", "user-library-read",  # library
-          ]
+SCOPES = [
+    # spotify connect
+    "user-read-currently-playing", "user-read-playback-state", "user-modify-playback-state",
+    # playback
+    "app-remote-control", "streaming",
+    # playlists
+    "playlist-read-private", "playlist-read-collaborative",
+    "playlist-modify-private", "playlist-modify-public",
+    # listening history
+    "user-read-playback-position", "user-top-read", "user-read-recently-played",
+    # library
+    "user-library-modify", "user-library-read",
+]
 
 
 class Client:
@@ -33,7 +39,7 @@ class Client:
         """Initialize Spotify client with necessary permissions"""
         self.logger = logger
 
-        scope = "user-library-read,user-read-playback-state,user-modify-playback-state,user-read-currently-playing,playlist-read-private,playlist-read-collaborative,playlist-modify-private,playlist-modify-public"
+        scope = ",".join(SCOPES)
 
         try:
             self.sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
