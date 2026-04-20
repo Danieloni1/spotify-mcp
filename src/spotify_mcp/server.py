@@ -56,8 +56,9 @@ class Playback(ToolModel):
     - start: Starts playing new item or resumes current playback if called with no uri.
     - pause: Pauses current playback.
     - skip: Skips current track.
+    - previous: Skips to the previous track in playback history.
     """
-    action: str = Field(description="Action to perform: 'get', 'start', 'pause' or 'skip'.")
+    action: str = Field(description="Action to perform: 'get', 'start', 'pause', 'skip', or 'previous'.")
     spotify_uri: Optional[str] = Field(default=None, description="Spotify uri of item to play for 'start' action. " +
                                                                  "If omitted, resumes current playback.")
     num_skips: Optional[int] = Field(default=1, description="Number of tracks to skip for `skip` action.")
@@ -178,6 +179,13 @@ async def handle_call_tool(
                         return [types.TextContent(
                             type="text",
                             text="Skipped to next track."
+                        )]
+                    case "previous":
+                        logger.info("Skipping to previous track.")
+                        spotify_client.previous_track()
+                        return [types.TextContent(
+                            type="text",
+                            text="Skipped to previous track."
                         )]
 
             case "Search":
