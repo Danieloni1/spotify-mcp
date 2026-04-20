@@ -183,12 +183,15 @@ def parse_tracks(items: Dict) -> list:
         items: List of track items
     Returns:
         List of parsed tracks
-    """ 
+    """
     tracks = []
     for idx, item in enumerate(items):
         if not item:
             continue
-        tracks.append(parse_track(item['track']))
+        parsed = parse_track(item['track'])
+        if parsed is not None and item.get('added_at'):
+            parsed['added_at'] = item['added_at']
+        tracks.append(parsed)
     return tracks
 
 
