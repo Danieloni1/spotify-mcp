@@ -115,6 +115,21 @@ class Client:
                     self.set_username()
                 playlist = self.sp.playlist(item_id)
                 self.logger.info(f"playlist info is {playlist}")
+                # sp.playlist() only returns the first 100 tracks; paginate the rest.
+                total = playlist['tracks']['total']
+                all_items = list(playlist['tracks']['items'])
+                while len(all_items) < total:
+                    page = self.sp.playlist_items(
+                        item_id,
+                        offset=len(all_items),
+                        limit=100,
+                        additional_types=('track',),
+                    )
+                    if not page or not page.get('items'):
+                        break
+                    all_items.extend(page['items'])
+                playlist['tracks']['items'] = all_items
+                playlist['tracks']['total'] = len(all_items)
                 playlist_info = utils.parse_playlist(playlist, self.username, detailed=True)
 
                 return playlist_info
@@ -232,16 +247,35 @@ class Client:
         return [utils.parse_playlist(playlist, self.username) for playlist in playlists['items']]
     
     @utils.ensure_username
-    def get_playlist_tracks(self, playlist_id: str, limit=50) -> List[Dict]:
+    def get_playlist_tracks(self, playlist_id: str, limit: Optional[int] = None) -> List[Dict]:
         """
-        Get tracks from a playlist.
+        Get tracks from a playlist, paginating until all tracks are fetched.
         - playlist_id: ID of the playlist to get tracks from.
-        - limit: Max number of tracks to return.
+        - limit: Optional cap on total tracks returned. None = all.
         """
-        playlist = self.sp.playlist(playlist_id)
-        if not playlist:
+        all_items: List[Dict] = []
+        page = self.sp.playlist_items(
+            playlist_id,
+            offset=0,
+            limit=100,
+            additional_types=('track',),
+        )
+        if not page:
             raise ValueError("No playlist found.")
-        return utils.parse_tracks(playlist['tracks']['items'])
+        while page and page.get('items'):
+            all_items.extend(page['items'])
+            if limit is not None and len(all_items) >= limit:
+                all_items = all_items[:limit]
+                break
+            if not page.get('next'):
+                break
+            page = self.sp.playlist_items(
+                playlist_id,
+                offset=len(all_items),
+                limit=100,
+                additional_types=('track',),
+            )
+        return utils.parse_tracks(all_items)
     
     @utils.ensure_username
     def add_tracks_to_playlist(self, playlist_id: str, track_ids: List[str], position: Optional[int] = None):
